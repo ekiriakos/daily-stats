@@ -1,5 +1,6 @@
+# Paths must be provided without quotes
+
 [keys]
-# Path to private key
 private_key =
 
 [servers]

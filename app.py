@@ -8,11 +8,16 @@ from zipfile import ZipFile
 import time
 from pathlib import Path
 import configparser
+from paramiko import SSHClient
+import paramiko
+
+# TODO
+# Check required period
+# Fix change of month to write day/previous_month - day/next_month
+# Add to mail
 
 config = configparser.ConfigParser()
 config.read('config.ini')
-
-startTime = datetime.now()
 
 ############### Configuration ################
 
@@ -27,7 +32,6 @@ path_a = config['paths']['path_a']
 path_b = config['paths']['path_b']
 local_path = Path(config['paths']['local_path'])
 
-
 current_date = datetime.now().date()
 current_month = datetime.now().month
 mont_abbr = calendar.month_abbr[current_month]
@@ -35,9 +39,9 @@ mont_abbr = calendar.month_abbr[current_month]
 start_date = (current_date - timedelta(days=7)).strftime('%d-%m')
 end_date = current_date.strftime('%d-%m')
 
-current_files = []
-
-# Read files to list first to speed up processing.
+#date_key = (datetime.today() - timedelta(days=1)).strftime('%Y_%m_%d')
+date_key = datetime.today().strftime('%Y_%m_%d')
+daily_files = []
 
 with sshtunnel.open_tunnel(
         (jh, 22),
@@ -48,38 +52,35 @@ with sshtunnel.open_tunnel(
 ) as tunnel:
     cnopts = pysftp.CnOpts()
     cnopts.hostkeys = None
+    with SSHClient() as ssh:
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(localhost,
+                    port=tunnel.local_bind_port,
+                    username=netact_username,
+                    password=netact_pwd
+                    )
+        stdin, stdout, stderr = ssh.exec_command('cd ' + path_b + '/;ls -a | sort')
+        for line in stdout:
+            if date_key in line:
+                daily_files.append(line)
     with pysftp.Connection(host=localhost, username=netact_username, password=netact_pwd, port=10022, cnopts=cnopts) as sftp:
         print("Connection succesfully established...\n")
-        sftp.chdir(path_a)
-        for file in sftp.listdir(path_a):
-            if "old_stats" not in file:
-                ts = sftp.stat(path_a + file).st_mtime
-                mod_ts = datetime.fromtimestamp(ts).date() # strip timestamp from datetime object
-                if mod_ts == current_date:
-                    current_files.append(file)
-                    sftp.get(remotepath= path_a + file, localpath = Path.joinpath(local_path, file))
-        for file in sftp.listdir(path_b):
-            ts = sftp.stat(path_b + file).st_mtime
-            mod_ts = datetime.fromtimestamp(ts).date() # strip timestamp from datetime object
-            if mod_ts == current_date:
-                current_files.append(file)
-                sftp.get(remotepath= path_b + file, localpath = Path.joinpath(local_path, file))
-    sftp.close()
+        sftp.chdir(path_b)
+        for f in daily_files:
+            f = f.strip()
+            sftp.get(remotepath=path_b + f, localpath=Path(local_path).absolute().joinpath(f))
 
-for kpi in current_files:
-    print("Today's files are: ", kpi)
+print("Today's files are: \n")
+for kpi in daily_files:
+    print(kpi, end="")
 
 os.chdir(local_path)
 
-# Fix change of month to write day/previous_month - day/next_month
 kpizip = start_date + '_' + end_date + '.zip'
 
 with ZipFile(kpizip, 'w') as zipObj2:
-    zipObj2.write(current_files[0])
-    zipObj2.write(current_files[1])
-    zipObj2.write(current_files[2])
-    zipObj2.write(current_files[3])
+    zipObj2.write(daily_files[0].strip())
+    zipObj2.write(daily_files[1].strip())
 
+print("")
 print(kpizip + " created")
-
-print(datetime.now() - startTime)

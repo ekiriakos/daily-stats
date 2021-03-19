@@ -83,4 +83,4 @@ with ZipFile(kpizip, 'w') as zipObj2:
     zipObj2.write(daily_files[1].strip())
 
 print("")
-print(kpizip + " created")
+print(kpizip + " created.")
